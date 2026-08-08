@@ -1,43 +1,200 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  Activity, Blocks, Building2, CandlestickChart, CheckCheck, ChevronDown, Gavel,
-  Landmark, Pause, Play, ScrollText, Wallet, Zap,
-} from 'lucide-react'
-import {
-  useStore, startLoop, stopLoop, setRole, setView, setLive, type Role, type View,
+  useStore, connect, disconnect, setRole, setView, setLive, markBooted,
+  askRegistry, clearAsk, type Role, type View,
 } from './sim'
 import LiveOps from './views/LiveOps'
 import Registry from './views/Registry'
 import Market, { Vault } from './views/Market'
 import Compliance, { VerifyQueue } from './views/Compliance'
-import { Dot, Hash, Num, Pill, TX_TONE } from './ui'
+import { Btn, Dot, Hash, Num, Rule, Tag, TX_TONE, clock } from './ui'
 
-const ROLES: { id: Role; label: string; desk: string; icon: typeof Building2; tint: string; blurb: string }[] = [
-  { id: 'industry', label: 'Industry', desk: 'Bharat Steel Ltd', icon: Building2, tint: '#ff7a45', blurb: 'File MRV reports, hold and trade certificates' },
-  { id: 'verifier', label: 'Verifier', desk: 'Bharat Assessment Services', icon: CheckCheck, tint: '#a78bfa', blurb: 'Accredited carbon verifier — approve or reject reports' },
-  { id: 'regulator', label: 'Regulator', desk: 'Bureau of Energy Efficiency', icon: Landmark, tint: '#5aa2ff', blurb: 'Supervise the scheme, audit every record' },
+const ROLES: { id: Role; label: string; desk: string; blurb: string }[] = [
+  { id: 'industry', label: 'Industry', desk: 'Bharat Steel Ltd', blurb: 'File MRV reports, hold and trade certificates' },
+  { id: 'verifier', label: 'Verifier', desk: 'Bharat Assessment Services', blurb: 'Accredited verifier — approve or reject reports' },
+  { id: 'regulator', label: 'Regulator', desk: 'Bureau of Energy Efficiency', blurb: 'Supervise the scheme, audit every record' },
 ]
 
-const MENUS: Record<Role, { id: View; label: string; icon: typeof Activity; hint: string }[]> = {
+const MENUS: Record<Role, { id: View; label: string; hint: string }[]> = {
   industry: [
-    { id: 'ops', label: 'Live operations', icon: Activity, hint: 'Telemetry from every device' },
-    { id: 'vault', label: 'Certificate vault', icon: Wallet, hint: 'Your CCC holdings' },
-    { id: 'market', label: 'Exchange', icon: CandlestickChart, hint: 'Buy and sell CCCs' },
-    { id: 'registry', label: 'Registry', icon: Blocks, hint: 'The chain itself' },
+    { id: 'ops', label: 'Live operations', hint: 'Telemetry from every device' },
+    { id: 'vault', label: 'Certificate vault', hint: 'Your CCC holdings' },
+    { id: 'market', label: 'Exchange', hint: 'Buy and sell certificates' },
+    { id: 'registry', label: 'Registry', hint: 'The chain itself' },
   ],
   verifier: [
-    { id: 'verify', label: 'Verification queue', icon: Gavel, hint: 'Reports awaiting a decision' },
-    { id: 'ops', label: 'Facility telemetry', icon: Activity, hint: 'Evidence behind the numbers' },
-    { id: 'registry', label: 'Registry', icon: Blocks, hint: 'The chain itself' },
+    { id: 'verify', label: 'Verification queue', hint: 'Reports awaiting a decision' },
+    { id: 'ops', label: 'Facility telemetry', hint: 'Evidence behind the numbers' },
+    { id: 'registry', label: 'Registry', hint: 'The chain itself' },
   ],
   regulator: [
-    { id: 'compliance', label: 'Scheme oversight', icon: ScrollText, hint: 'Every obligated entity' },
-    { id: 'market', label: 'Market surveillance', icon: CandlestickChart, hint: 'Price and settlement tape' },
-    { id: 'registry', label: 'Registry audit', icon: Blocks, hint: 'Tamper-evidence proof' },
-    { id: 'ops', label: 'Facility telemetry', icon: Activity, hint: 'Source data' },
+    { id: 'compliance', label: 'Scheme oversight', hint: 'Every obligated entity' },
+    { id: 'market', label: 'Market surveillance', hint: 'Price and settlement tape' },
+    { id: 'registry', label: 'Registry audit', hint: 'Tamper-evidence proof' },
+    { id: 'ops', label: 'Facility telemetry', hint: 'Source data' },
   ],
 }
 
+const TITLES: Record<View, { h: string; s: string }> = {
+  ops: { h: 'Live operations', s: 'Continuous emissions monitoring across every obligated facility' },
+  registry: { h: 'Registry', s: 'The immutable record of issuance, transfer, retirement and attestation' },
+  market: { h: 'Exchange', s: 'Certificate spot market with on-chain settlement' },
+  compliance: { h: 'Scheme oversight', s: 'CCTS compliance position across all obligated entities' },
+  verify: { h: 'Verification queue', s: 'Accredited verifier decisions written straight to the chain' },
+  vault: { h: 'Certificate vault', s: 'Serialised certificates held by your organisation' },
+}
+
+// ── boot sequence ────────────────────────────────────────────
+const BOOT = [
+  'Opening channel to registry node',
+  'Recomputing SHA-256 from genesis',
+  'Reconciling obligated-entity roster',
+  'Subscribing to device telemetry',
+  'Attaching verification co-pilot',
+]
+
+function Boot() {
+  const connected = useStore(s => s.connected)
+  const height = useStore(s => s.chainHeight)
+  const chain = useStore(s => s.chain)
+  const [step, setStep] = useState(0)
+  const [out, setOut] = useState(false)
+
+  useEffect(() => {
+    if (step >= BOOT.length) return
+    const t = setTimeout(() => setStep(s => s + 1), step === 0 ? 420 : 300)
+    return () => clearTimeout(t)
+  }, [step])
+
+  useEffect(() => {
+    if (step >= BOOT.length && connected) {
+      const t = setTimeout(() => { setOut(true); setTimeout(markBooted, 620) }, 520)
+      return () => clearTimeout(t)
+    }
+  }, [step, connected])
+
+  const head = chain[chain.length - 1]?.hash ?? ''
+
+  return (
+    <div className={`grid-bg fixed inset-0 z-[100] grid place-items-center bg-void transition-all duration-700 ${out ? 'pointer-events-none opacity-0' : 'opacity-100'}`}>
+      <div className="vignette absolute inset-0" />
+      <div className="relative w-[min(560px,88vw)]">
+        <div className="mb-10 text-center">
+          <div className="eyebrow mb-4">India Carbon Credit Trading Scheme</div>
+          <h1 className="font-display text-[40px] font-semibold leading-none tracking-[-.03em]">CarbonLedger</h1>
+          <p className="mt-3 text-[12.5px] text-dim">Please stand by — the registry is being verified.</p>
+        </div>
+
+        <div className="frame border border-rule bg-panel/50 p-5">
+          <span className="fx" />
+          <ol className="space-y-2.5">
+            {BOOT.map((b, i) => {
+              const done = step > i
+              const now = step === i
+              return (
+                <li key={b} className={`flex items-center gap-3 font-mono text-[11px] transition-colors duration-300 ${done ? 'text-mute' : now ? 'text-signal' : 'text-faint'}`}>
+                  <span className="w-6 text-[9.5px] text-faint">{String(i + 1).padStart(2, '0')}</span>
+                  <span className="flex-1">{b}</span>
+                  <span>{done ? 'ok' : now ? <span className="a-caret">_</span> : '—'}</span>
+                </li>
+              )
+            })}
+          </ol>
+          <Rule className="my-4" />
+          <div className="flex items-center justify-between font-mono text-[10px]">
+            <span className="text-faint">CHAIN HEAD</span>
+            <span className={connected ? 'text-signal' : 'text-faint'}>
+              {connected ? <>#{height} · <Hash value={head} len={16} /></> : 'awaiting node…'}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── ask the registry ─────────────────────────────────────────
+const SUGGESTIONS = [
+  'Which entity has the largest shortfall?',
+  'How much would covering every shortfall cost at spot?',
+  'Is the registry intact right now?',
+]
+
+function Ask({ onClose }: { onClose: () => void }) {
+  const ask = useStore(s => s.ask)
+  const [q, setQ] = useState('')
+  const input = useRef<HTMLInputElement>(null)
+  useEffect(() => { input.current?.focus() }, [])
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h)
+  }, [onClose])
+
+  const run = (text: string) => { if (text.trim()) askRegistry(text.trim()) }
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-void/80 a-fade" onClick={onClose} />
+      <div className="fixed inset-x-0 top-0 z-50 flex justify-center px-4 pt-[14vh]">
+        <div className="frame w-[min(680px,94vw)] border border-rule2 bg-panel a-rise">
+          <span className="fx" />
+          <form onSubmit={e => { e.preventDefault(); run(q) }} className="flex items-center gap-3 border-b border-rule px-4 py-3.5">
+            <span className="font-mono text-[13px] text-signal">›</span>
+            <input ref={input} value={q} onChange={e => setQ(e.target.value)}
+              placeholder="Ask the registry anything about the live scheme"
+              className="flex-1 bg-transparent text-[14px] text-bone placeholder:text-faint focus:outline-none" />
+            <Btn size="sm" tone="ghost" onClick={() => run(q)} disabled={ask.busy || !q.trim()}>
+              {ask.busy ? 'Thinking' : 'Ask'}
+            </Btn>
+          </form>
+
+          <div className="p-4">
+            {!ask.answer && !ask.busy && (
+              <div className="space-y-1.5">
+                <div className="eyebrow mb-2.5">Try</div>
+                {SUGGESTIONS.map(s => (
+                  <button key={s} onClick={() => { setQ(s); run(s) }}
+                    className="block w-full border border-transparent px-2.5 py-2 text-left text-[12.5px] text-mute transition hover:border-rule hover:text-bone">
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {ask.busy && (
+              <div className="sweep relative overflow-hidden border border-rule px-4 py-6 text-center font-mono text-[11px] text-dim">
+                querying the registry
+              </div>
+            )}
+
+            {ask.answer && !ask.busy && (
+              <div className="a-rise">
+                <p className="text-[14px] leading-relaxed text-bone">{ask.answer.answer}</p>
+                {ask.answer.citations?.length > 0 && (
+                  <ul className="mt-4 space-y-1.5 border-t border-rule pt-3.5">
+                    {ask.answer.citations.map(c => (
+                      <li key={c} className="flex gap-2.5 font-mono text-[10.5px] text-dim">
+                        <span className="text-faint">+</span>{c}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <div className="mt-4 flex items-center justify-between">
+                  <Tag tone={ask.answer.source === 'groq' ? 'ok' : 'warn'}>
+                    {ask.answer.source === 'groq' ? `groq · ${ask.answer.model}` : 'offline fallback'}
+                  </Tag>
+                  <Btn size="sm" tone="quiet" onClick={() => { clearAsk(); setQ('') }}>Clear</Btn>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ── chrome ───────────────────────────────────────────────────
 function RoleSwitch() {
   const role = useStore(s => s.role)
   const [open, setOpen] = useState(false)
@@ -52,32 +209,28 @@ function RoleSwitch() {
   return (
     <div ref={box} className="relative">
       <button onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-2.5 rounded-lg border border-line2 bg-panel2 px-3 py-1.5 transition-all duration-200 hover:border-verdant/40">
-        <span className="grid h-6 w-6 place-items-center rounded" style={{ background: cur.tint + '22', color: cur.tint }}>
-          <cur.icon size={13} />
-        </span>
+        className="group flex items-center gap-3 border border-rule2 px-3 py-1.5 transition-colors hover:border-signal">
         <span className="text-left leading-tight">
-          <span className="block font-mono text-[9px] uppercase tracking-[.15em] text-dim">{cur.label} desk</span>
+          <span className="eyebrow block">{cur.label} desk</span>
           <span className="block text-[12px] font-medium">{cur.desk}</span>
         </span>
-        <ChevronDown size={13} className={`text-dim transition-transform duration-300 ${open ? 'rotate-180' : ''}`} />
+        <span className={`font-mono text-[11px] text-dim transition-transform duration-300 ${open ? 'rotate-45' : ''}`}>+</span>
       </button>
 
       {open && (
-        <div className="absolute right-0 z-50 mt-2 w-[300px] overflow-hidden rounded-lg border border-line2 bg-panel shadow-[0_28px_60px_-24px_rgba(0,0,0,.9)] a-rise">
-          <div className="border-b border-line px-3 py-2 font-mono text-[9.5px] uppercase tracking-[.16em] text-dim">Switch desk</div>
+        <div className="frame absolute right-0 z-50 mt-2 w-[320px] border border-rule2 bg-panel a-rise">
+          <span className="fx" />
+          <div className="border-b border-rule px-3.5 py-2 eyebrow">Switch desk</div>
           <div className="stagger p-1.5">
-            {ROLES.map(r => (
+            {ROLES.map((r, i) => (
               <button key={r.id} onClick={() => { setRole(r.id); setOpen(false) }}
-                className={`flex w-full items-start gap-2.5 rounded px-2.5 py-2 text-left transition-colors ${r.id === role ? 'bg-panel2' : 'hover:bg-panel2'}`}>
-                <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded" style={{ background: r.tint + '1e', color: r.tint }}>
-                  <r.icon size={14} />
-                </span>
+                className={`flex w-full items-start gap-3 px-2.5 py-2.5 text-left transition-colors ${r.id === role ? 'bg-raise' : 'hover:bg-raise'}`}>
+                <span className="mt-[3px] font-mono text-[9.5px] text-faint">{String(i + 1).padStart(2, '0')}</span>
                 <span className="min-w-0">
-                  <span className="flex items-center gap-1.5 text-[12.5px] font-medium">
-                    {r.desk}{r.id === role && <Dot tone={r.tint} />}
+                  <span className="flex items-center gap-2 text-[12.5px] font-medium">
+                    {r.desk}{r.id === role && <Dot />}
                   </span>
-                  <span className="mt-0.5 block text-[11px] leading-snug text-dim">{r.blurb}</span>
+                  <span className="mt-1 block text-[11px] leading-snug text-dim">{r.blurb}</span>
                 </span>
               </button>
             ))}
@@ -94,38 +247,39 @@ function ForgeDock() {
   const mempool = useStore(s => s.mempool)
   const forging = useStore(s => s.forging)
   const integrity = useStore(s => s.integrity)
+  const connected = useStore(s => s.connected)
   const last = chain[chain.length - 1]
-  const recent = chain.slice(-9)
+  if (!last) return null
 
   return (
-    <footer className={`relative z-20 flex items-center gap-4 border-t px-4 py-2 transition-colors duration-500
-      ${integrity === 'broken' ? 'border-breach/40 bg-breach/6' : 'border-line bg-panel/80'} backdrop-blur`}>
-      <div className="flex shrink-0 items-center gap-2">
-        <Dot tone={integrity === 'broken' ? '#ff4d5e' : '#2fe0a4'} />
-        <span className="font-mono text-[10px] uppercase tracking-[.16em] text-dim">Chain</span>
-        <span className="font-mono text-[12px] font-semibold">#{last.index}</span>
+    <footer className={`relative z-20 flex items-center gap-5 border-t px-4 py-2 transition-colors duration-500
+      ${integrity === 'broken' ? 'border-breach/40 bg-breach/[.04]' : 'border-rule bg-panel/70'}`}>
+      <div className="flex shrink-0 items-center gap-2.5">
+        <Dot tone={!connected ? '#5c6268' : integrity === 'broken' ? '#e2503f' : '#3ecf9a'} pulse={connected} />
+        <span className="eyebrow">Chain</span>
+        <span className="font-mono text-[12px] font-medium">#{last.index}</span>
       </div>
 
-      <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-        {recent.map(b => (
-          <div key={b.index} className="a-block flex shrink-0 items-center gap-1.5">
-            <div className={`rounded border px-1.5 py-1 font-mono text-[9px] leading-tight
-              ${b.valid ? 'border-line2 bg-panel2 text-mute' : 'border-breach/60 bg-breach/12 text-breach'}`}>
-              <div className="font-bold">#{b.index}</div>
-              <div className="opacity-70">{b.hash.slice(0, 6)}</div>
+      <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+        {chain.slice(-10).map(b => (
+          <div key={b.index} className="a-block flex shrink-0 items-center gap-1">
+            <div className={`border px-1.5 py-[3px] font-mono text-[8.5px] leading-tight
+              ${b.valid ? 'border-rule text-dim' : 'border-breach/60 text-breach'}`}>
+              <div>#{b.index}</div>
+              <div className="opacity-60">{b.hash.slice(0, 6)}</div>
             </div>
-            <span className={`h-px w-2 ${b.valid ? 'bg-line2' : 'bg-breach/60'}`} />
+            <span className={`h-px w-1.5 ${b.valid ? 'bg-rule2' : 'bg-breach/60'}`} />
           </div>
         ))}
-        <div className={`sweep relative shrink-0 overflow-hidden rounded border border-dashed px-2 py-1 font-mono text-[9px]
-          ${forging ? 'border-verdant/60 text-verdant' : 'border-line2 text-dim'}`}>
-          {forging ? 'sealing…' : `${mempool.length} pending`}
+        <div className={`sweep relative shrink-0 overflow-hidden border border-dashed px-2 py-1 font-mono text-[8.5px]
+          ${forging ? 'border-signal/60 text-signal' : 'border-rule text-faint'}`}>
+          {forging ? 'sealing' : `${mempool} pending`}
         </div>
       </div>
 
-      <div className="hidden shrink-0 items-center gap-2 md:flex">
-        <span className="font-mono text-[9.5px] uppercase tracking-[.14em] text-dim">head</span>
-        <Hash value={last.hash} len={22} className={`text-[10.5px] ${integrity === 'broken' ? 'text-breach' : 'text-verdant'}`} />
+      <div className="hidden shrink-0 items-center gap-2.5 md:flex">
+        <span className="eyebrow">head</span>
+        <Hash value={last.hash} len={22} className={`text-[10px] ${integrity === 'broken' ? 'text-breach' : 'text-signal'}`} />
       </div>
     </footer>
   )
@@ -133,16 +287,17 @@ function ForgeDock() {
 
 function Toasts() {
   const toasts = useStore(s => s.toasts)
-  const tone = { ok: '#2fe0a4', warn: '#ffc24b', bad: '#ff4d5e', info: '#5aa2ff' }
+  const c = { ok: '#3ecf9a', warn: '#d8a83a', bad: '#e2503f', info: '#8d9299' }
   return (
-    <div className="pointer-events-none fixed bottom-16 right-4 z-50 flex w-[330px] flex-col gap-2">
+    <div className="pointer-events-none fixed bottom-14 right-4 z-50 flex w-[340px] flex-col gap-2">
       {toasts.map(t => (
-        <div key={t.id} className="a-slideL overflow-hidden rounded-lg border border-line2 bg-panel/95 p-3 shadow-[0_20px_50px_-20px_rgba(0,0,0,.9)] backdrop-blur">
-          <div className="flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: tone[t.kind] }} />
-            <span className="text-[12.5px] font-semibold" style={{ color: tone[t.kind] }}>{t.title}</span>
+        <div key={t.id} className="frame a-slideL border border-rule2 bg-panel/95 p-3.5 backdrop-blur">
+          <span className="fx" />
+          <div className="flex items-center gap-2.5">
+            <span className="h-[5px] w-[5px] rounded-full" style={{ background: c[t.kind] }} />
+            <span className="font-mono text-[10px] uppercase tracking-[.16em]" style={{ color: c[t.kind] }}>{t.title}</span>
           </div>
-          <p className="mt-1 text-[11.5px] leading-snug text-mute">{t.body}</p>
+          <p className="mt-1.5 text-[11.5px] leading-snug text-mute">{t.body}</p>
         </div>
       ))}
     </div>
@@ -154,29 +309,19 @@ function Ticker() {
   const items = [...chain].reverse().flatMap(b => b.txs).slice(0, 12)
   const row = items.length ? [...items, ...items] : []
   return (
-    <div className="relative overflow-hidden border-y border-line bg-ink/60 py-1.5">
-      <div className="a-ticker flex w-max gap-8 whitespace-nowrap">
+    <div className="relative overflow-hidden border-b border-rule py-1.5">
+      <div className="a-ticker flex w-max gap-10 whitespace-nowrap">
         {row.map((t, i) => (
-          <span key={t.id + i} className="flex items-center gap-2 font-mono text-[10.5px]">
-            <span className="font-bold tracking-[.1em]" style={{ color: TX_TONE[t.kind].c }}>{t.kind}</span>
-            <span className="text-dim">{t.note}</span>
-            {t.qty > 0 && <span className="text-mute">{t.qty.toLocaleString('en-IN')} tCO2e</span>}
+          <span key={t.id + i} className="flex items-center gap-2.5 font-mono text-[10px]">
+            <span className="uppercase tracking-[.16em]" style={{ color: TX_TONE[t.kind] }}>{t.kind}</span>
+            <span className="text-faint">{t.note}</span>
           </span>
         ))}
       </div>
-      <span className="pointer-events-none absolute inset-y-0 left-0 w-16 bg-gradient-to-r from-ink to-transparent" />
-      <span className="pointer-events-none absolute inset-y-0 right-0 w-16 bg-gradient-to-l from-ink to-transparent" />
+      <span className="pointer-events-none absolute inset-y-0 left-0 w-20 bg-gradient-to-r from-void to-transparent" />
+      <span className="pointer-events-none absolute inset-y-0 right-0 w-20 bg-gradient-to-l from-void to-transparent" />
     </div>
   )
-}
-
-const TITLES: Record<View, { h: string; s: string }> = {
-  ops: { h: 'Live operations', s: 'Continuous emissions monitoring across every obligated facility' },
-  registry: { h: 'Registry', s: 'The immutable record of issuance, transfer, retirement and attestation' },
-  market: { h: 'Exchange', s: 'Carbon Credit Certificate spot market with on-chain settlement' },
-  compliance: { h: 'Scheme oversight', s: 'CCTS compliance position across all obligated entities' },
-  verify: { h: 'Verification queue', s: 'Accredited carbon verifier decisions written straight to the chain' },
-  vault: { h: 'Certificate vault', s: 'Serialised CCCs held by your organisation' },
 }
 
 export default function App() {
@@ -184,36 +329,49 @@ export default function App() {
   const view = useStore(s => s.view)
   const live = useStore(s => s.live)
   const price = useStore(s => s.price)
+  const booted = useStore(s => s.booted)
+  const connected = useStore(s => s.connected)
+  const [ask, setAsk] = useState(false)
   const menu = MENUS[role]
 
-  useEffect(() => { startLoop(); return stopLoop }, [])
+  useEffect(() => { connect(); return disconnect }, [])
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setAsk(a => !a) }
+    }
+    window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h)
+  }, [])
 
   const Body = { ops: LiveOps, registry: Registry, market: Market, compliance: Compliance, verify: VerifyQueue, vault: Vault }[view]
   const t = TITLES[view]
 
   return (
-    <div className="flex h-full flex-col bg-ink">
-      <header className="relative z-30 flex items-center gap-4 border-b border-line bg-panel/60 px-4 py-2.5 backdrop-blur">
-        <div className="flex items-center gap-2.5">
-          <span className="relative grid h-8 w-8 place-items-center rounded-lg border border-verdant/40 bg-verdant/10">
-            <Zap size={15} className="text-verdant" />
-            <span className="absolute inset-0 rounded-lg a-glow" style={{ boxShadow: '0 0 18px rgba(47,224,164,.45)' }} />
-          </span>
-          <div className="leading-tight">
-            <div className="font-display text-[15px] font-bold tracking-tight">CarbonLedger</div>
-            <div className="font-mono text-[9px] uppercase tracking-[.18em] text-dim">CCTS MRV &amp; credit exchange</div>
-          </div>
+    <div className="flex h-full flex-col bg-void">
+      {!booted && <Boot />}
+
+      <header className="relative z-30 flex items-center gap-5 border-b border-rule px-4 py-3">
+        <div className="flex items-baseline gap-3">
+          <span className="font-display text-[15px] font-semibold tracking-[-.02em]">CarbonLedger</span>
+          <span className="eyebrow hidden sm:block">CCTS MRV &amp; credit exchange</span>
         </div>
 
         <div className="ml-auto flex items-center gap-3">
-          <div className="hidden items-center gap-2 rounded-lg border border-line bg-panel2/60 px-3 py-1.5 sm:flex">
-            <span className="font-mono text-[9px] uppercase tracking-[.15em] text-dim">CCC spot</span>
-            <span className="font-mono text-[13px] font-semibold text-verdant tnum"><Num value={price} prefix="Rs " /></span>
-          </div>
-          <button onClick={() => setLive(!live)}
-            className="flex items-center gap-1.5 rounded-lg border border-line2 bg-panel2 px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[.14em] text-mute transition hover:border-verdant/40 hover:text-verdant">
-            {live ? <Pause size={12} /> : <Play size={12} />}{live ? 'Live' : 'Paused'}
+          <button onClick={() => setAsk(true)}
+            className="hidden items-center gap-3 border border-rule px-3 py-1.5 text-[11.5px] text-dim transition-colors hover:border-signal hover:text-bone md:flex">
+            <span className="font-mono text-signal">›</span> Ask the registry
+            <span className="font-mono text-[9.5px] text-faint">⌘K</span>
           </button>
+
+          <div className="hidden items-baseline gap-2.5 border border-rule px-3 py-1.5 sm:flex">
+            <span className="eyebrow">CCC spot</span>
+            <span className="font-mono text-[13px] text-signal tnum"><Num value={price} prefix="₹" /></span>
+          </div>
+
+          <button onClick={() => setLive(!live)}
+            className="border border-rule px-3 py-1.5 font-mono text-[9.5px] uppercase tracking-[.18em] text-dim transition-colors hover:border-signal hover:text-signal">
+            {live ? 'live' : 'paused'}
+          </button>
+
           <RoleSwitch />
         </div>
       </header>
@@ -221,53 +379,55 @@ export default function App() {
       <Ticker />
 
       <div className="flex min-h-0 flex-1">
-        <nav className="hidden w-[214px] shrink-0 flex-col gap-1 border-r border-line bg-panel/40 p-2.5 lg:flex">
-          <div className="px-2 pb-1.5 font-mono text-[9px] uppercase tracking-[.18em] text-dim">{role} workspace</div>
-          <div key={role} className="stagger flex flex-col gap-1">
-            {menu.map(m => {
+        <nav className="hidden w-[228px] shrink-0 flex-col border-r border-rule p-3 lg:flex">
+          <div className="eyebrow px-2 pb-3">{role} workspace</div>
+          <div key={role} className="stagger flex flex-col">
+            {menu.map((m, i) => {
               const on = view === m.id
               return (
                 <button key={m.id} onClick={() => setView(m.id)}
-                  className={`group relative flex items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-all duration-200
-                    ${on ? 'bg-verdant/10 text-text' : 'text-mute hover:bg-panel2 hover:text-text'}`}>
-                  {on && <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-verdant" />}
-                  <m.icon size={14} className={`mt-0.5 shrink-0 transition-colors ${on ? 'text-verdant' : 'text-dim group-hover:text-mute'}`} />
+                  className={`group relative flex items-start gap-3 border-l px-3 py-2.5 text-left transition-all duration-200
+                    ${on ? 'border-signal bg-raise/60' : 'border-transparent hover:border-rule2 hover:bg-raise/30'}`}>
+                  <span className={`mt-[3px] font-mono text-[9.5px] ${on ? 'text-signal' : 'text-faint'}`}>
+                    {String(i + 1).padStart(2, '0')}
+                  </span>
                   <span className="min-w-0">
-                    <span className="block truncate text-[12.5px] font-medium">{m.label}</span>
-                    <span className="block truncate text-[10px] text-dim">{m.hint}</span>
+                    <span className={`block truncate text-[12.5px] ${on ? 'text-bone' : 'text-mute group-hover:text-bone'}`}>{m.label}</span>
+                    <span className="block truncate text-[10.5px] text-faint">{m.hint}</span>
                   </span>
                 </button>
               )
             })}
           </div>
 
-          <div className="mt-auto rounded-lg border border-line bg-panel2/40 p-2.5">
-            <div className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[.15em] text-dim">
-              <Dot tone={live ? '#2fe0a4' : '#7b8fa3'} pulse={live} />{live ? 'ingesting' : 'ingest paused'}
+          <div className="mt-auto border-t border-rule pt-3">
+            <div className="flex items-center gap-2 eyebrow">
+              <Dot tone={connected && live ? '#3ecf9a' : '#5c6268'} pulse={connected && live} />
+              {!connected ? 'node offline' : live ? 'ingesting' : 'ingest paused'}
             </div>
-            <p className="mt-1.5 text-[10.5px] leading-snug text-dim">
-              Devices push signed telemetry every 1.1 s. Batches are hashed and anchored automatically.
+            <p className="mt-2 px-0.5 text-[10.5px] leading-relaxed text-faint">
+              Devices push signed telemetry every 1.1 s. The registry node hashes each batch and anchors it automatically.
             </p>
           </div>
         </nav>
 
-        <main className="schematic min-w-0 flex-1 overflow-y-auto">
-          <div className="schematic-fade min-h-full p-4">
+        <main className="grid-bg min-w-0 flex-1 overflow-y-auto">
+          <div className="vignette min-h-full px-5 py-6">
             <div key={view} className="a-rise">
-              <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+              <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
                 <div>
-                  <h1 className="font-display text-[24px] font-semibold tracking-tight">{t.h}</h1>
-                  <p className="mt-0.5 text-[12.5px] text-dim">{t.s}</p>
+                  <div className="eyebrow mb-2">{clock(Date.now())} IST · India CCTS · FY 2026-27</div>
+                  <h1 className="font-display text-[30px] font-semibold leading-none tracking-[-.03em]">{t.h}</h1>
+                  <p className="mt-2.5 max-w-[62ch] text-[13px] leading-relaxed text-dim">{t.s}</p>
                 </div>
                 <div className="flex flex-wrap gap-1.5 lg:hidden">
                   {menu.map(m => (
                     <button key={m.id} onClick={() => setView(m.id)}
-                      className={`rounded border px-2.5 py-1 text-[11px] ${view === m.id ? 'border-verdant/50 bg-verdant/10 text-verdant' : 'border-line text-mute'}`}>
+                      className={`border px-2.5 py-1 font-mono text-[10px] uppercase tracking-[.14em] ${view === m.id ? 'border-signal text-signal' : 'border-rule text-dim'}`}>
                       {m.label}
                     </button>
                   ))}
                 </div>
-                <Pill tone="mute">India CCTS · compliance year FY 2026-27</Pill>
               </div>
               <Body />
             </div>
@@ -277,6 +437,7 @@ export default function App() {
 
       <ForgeDock />
       <Toasts />
+      {ask && <Ask onClose={() => setAsk(false)} />}
     </div>
   )
 }
