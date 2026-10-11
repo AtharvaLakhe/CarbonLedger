@@ -2,6 +2,8 @@
 
 **A blockchain-based Carbon Credit Marketplace & MRV platform for India's Carbon Credit Trading Scheme (CCTS).**
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE) ![React](https://img.shields.io/badge/React-UI-149ECA?logo=react&logoColor=white) ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white) ![Vite](https://img.shields.io/badge/Vite-build-646CFF?logo=vite&logoColor=white) ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-styles-06B6D4?logo=tailwindcss&logoColor=white) ![Last commit](https://img.shields.io/github/last-commit/AtharvaLakhe/CarbonLedger) ![Stars](https://img.shields.io/github/stars/AtharvaLakhe/CarbonLedger?style=flat)
+
 CarbonLedger unifies emissions monitoring, reporting and verification (MRV), tamper-evident credit issuance, and on-chain trading into a single live registry — replacing the fragmented, manual, spreadsheet-driven compliance workflow that obligated industries, accredited verifiers and the regulator currently rely on.
 
 ![Live operations dashboard](docs/screenshots/live-operations.png)
